@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Maf.Agents.Api/Maf.Agents.Api.csproj" />
+    <Project Path="src/Maf.Mcp.Server/Maf.Mcp.Server.csproj" />
+    <Project Path="src/Maf.Rag.Api/Maf.Rag.Api.csproj" />
+    <Project Path="src/Maf.Rag.Core/Maf.Rag.Core.csproj" />
+    <Project Path="src/Maf.ServiceDefaults/Maf.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Maf.Agents.Tests/Maf.Agents.Tests.csproj" />
+    <Project Path="tests/Maf.Mcp.Tests/Maf.Mcp.Tests.csproj" />
+    <Project Path="tests/Maf.Rag.Tests/Maf.Rag.Tests.csproj" />
+  </Folder>
+</Solution>

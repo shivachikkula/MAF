@@ -1,0 +1,95 @@
+<section class="chat">
+  <div class="chat__scroller" #scroller aria-live="polite">
+    @if (store.isEmpty()) {
+      <div class="empty">
+        <h2>Ask the knowledge base</h2>
+        <p>
+          A <strong>Researcher</strong> agent searches your documents through the MCP server, then a
+          <strong>Writer</strong> agent composes a cited answer.
+        </p>
+        <div class="empty__suggestions">
+          @for (s of suggestions; track s) {
+            <button type="button" class="chip" (click)="submit(s)">{{ s }}</button>
+          }
+        </div>
+      </div>
+    }
+
+    @for (m of store.messages(); track m.id) {
+      <article
+        class="msg"
+        [class.msg--user]="m.role === 'user'"
+        [class.msg--assistant]="m.role === 'assistant'"
+      >
+        @if (m.role === 'user') {
+          <div class="bubble bubble--user">{{ m.content }}</div>
+        } @else {
+          <div class="bubble bubble--assistant">
+            @if (m.steps.length) {
+              <details class="activity" [open]="m.status === 'streaming'">
+                <summary>
+                  @if (m.status === 'streaming') {
+                    <span class="spinner" aria-hidden="true"></span>
+                    {{ m.steps[m.steps.length - 1].agent }} is working…
+                  } @else {
+                    Agent activity ({{ m.steps.length }} steps)
+                  }
+                </summary>
+                <ol class="activity__steps">
+                  @for (step of m.steps; track $index) {
+                    <li>
+                      <div class="activity__agent">{{ step.agent }}</div>
+                      @for (call of step.toolCalls; track $index) {
+                        <div class="tool" [class.tool--done]="call.done">
+                          <span class="tool__icon">{{ call.done ? '✓' : '…' }}</span>
+                          <code>{{ call.tool }}</code>
+                          @if (call.args) {
+                            <span class="tool__args">{{ call.args }}</span>
+                          }
+                        </div>
+                      }
+                      @if (step.text && step.agent !== answerAgent) {
+                        <pre class="activity__text">{{ step.text }}</pre>
+                      }
+                    </li>
+                  }
+                </ol>
+              </details>
+            }
+
+            @if (m.content) {
+              <div class="markdown" [innerHTML]="m.content | markdown"></div>
+            } @else if (m.status === 'streaming' && !m.steps.length) {
+              <div class="typing" aria-label="Waiting for agents">
+                <span></span><span></span><span></span>
+              </div>
+            }
+
+            @if (m.status === 'error') {
+              <div class="alert" role="alert">{{ m.error }}</div>
+            } @else if (m.status === 'cancelled') {
+              <div class="muted">Stopped.</div>
+            }
+          </div>
+        }
+      </article>
+    }
+  </div>
+
+  <form class="composer" (submit)="$event.preventDefault(); submit()">
+    <textarea
+      rows="1"
+      placeholder="Ask a question about your documents…"
+      aria-label="Message"
+      maxlength="8000"
+      [value]="draft()"
+      (input)="onInput($event)"
+      (keydown)="onKeydown($event)"
+    ></textarea>
+    @if (store.isStreaming()) {
+      <button type="button" class="btn btn--secondary" (click)="store.stop()">Stop</button>
+    } @else {
+      <button type="submit" class="btn" [disabled]="!draft().trim()">Send</button>
+    }
+  </form>
+</section>
