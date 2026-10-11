@@ -1,0 +1,87 @@
+name: maf
+
+x-dotnet-env: &dotnet-env
+  ASPNETCORE_ENVIRONMENT: Production
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"   # REST + web UI at http://localhost:6333/dashboard
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  rag-api:
+    build:
+      context: .
+      dockerfile: deploy/dotnet.Dockerfile
+      args: { PROJECT: Maf.Rag.Api }
+    restart: unless-stopped
+    depends_on: [qdrant]
+    environment:
+      <<: *dotnet-env
+      OTEL_SERVICE_NAME: rag-api
+      OpenAI__ApiKey: ${OPENAI_API_KEY:?Set OPENAI_API_KEY in .env}
+      OpenAI__EmbeddingModel: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      Rag__EmbeddingDimensions: ${EMBEDDING_DIMENSIONS:-1536}
+      Qdrant__Host: qdrant
+      Qdrant__Port: 6334
+      Security__ApiKey: ${RAG_API_KEY:?Set RAG_API_KEY in .env}
+    ports:
+      - "127.0.0.1:5101:8080"   # document ingestion
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: deploy/dotnet.Dockerfile
+      args: { PROJECT: Maf.Mcp.Server }
+    restart: unless-stopped
+    depends_on: [rag-api]
+    environment:
+      <<: *dotnet-env
+      OTEL_SERVICE_NAME: mcp-server
+      RagApi__BaseUrl: http://rag-api:8080
+      RagApi__ApiKey: ${RAG_API_KEY}
+      Security__ApiKey: ${MCP_API_KEY:?Set MCP_API_KEY in .env}
+    ports:
+      - "127.0.0.1:5102:8080"   # MCP endpoint at /mcp (usable from any MCP client)
+
+  agents-api:
+    build:
+      context: .
+      dockerfile: deploy/dotnet.Dockerfile
+      args: { PROJECT: Maf.Agents.Api }
+    restart: unless-stopped
+    depends_on: [mcp-server]
+    environment:
+      <<: *dotnet-env
+      OTEL_SERVICE_NAME: agents-api
+      OpenAI__ApiKey: ${OPENAI_API_KEY}
+      OpenAI__ChatModel: ${OPENAI_CHAT_MODEL:-gpt-5-mini}
+      Mcp__Endpoint: http://mcp-server:8080/mcp
+      Mcp__ApiKey: ${MCP_API_KEY}
+    ports:
+      - "127.0.0.1:5103:8080"
+
+  web:
+    build:
+      context: frontend/maf-web
+    restart: unless-stopped
+    depends_on: [agents-api]
+    ports:
+      - "4200:8080"
+
+  aspire-dashboard:
+    # Traces, metrics and structured logs for every service (incl. gen_ai spans): http://localhost:18888
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.1
+    restart: unless-stopped
+    environment:
+      ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "127.0.0.1:18888:18888"
+
+volumes:
+  qdrant-data:

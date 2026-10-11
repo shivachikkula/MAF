@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: .NET build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore Maf.slnx
+      - run: dotnet build Maf.slnx -c Release --no-restore
+      - run: dotnet test Maf.slnx -c Release --no-build --logger trx --results-directory TestResults
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dotnet-test-results
+          path: TestResults
+
+  frontend:
+    name: Angular lint, test & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/maf-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/maf-web/package-lock.json
+      - run: npm ci
+      - run: npx prettier --check "src/**/*.{ts,html,scss}"
+      - run: npx ng test --watch=false
+      - run: npx ng build
+
+  images:
+    name: Container images
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    strategy:
+      matrix:
+        include:
+          - { name: rag-api, context: ., dockerfile: deploy/dotnet.Dockerfile, project: Maf.Rag.Api }
+          - { name: mcp-server, context: ., dockerfile: deploy/dotnet.Dockerfile, project: Maf.Mcp.Server }
+          - { name: agents-api, context: ., dockerfile: deploy/dotnet.Dockerfile, project: Maf.Agents.Api }
+          - { name: web, context: frontend/maf-web, dockerfile: frontend/maf-web/Dockerfile, project: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          build-args: PROJECT=${{ matrix.project }}
+          push: false
+          tags: maf/${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
